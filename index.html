@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Voxel Quantum OS : Bodhi-Panya Engine</title>
+    <style>
+        :root { --bg: #030406; --cyan: #00f3ff; --gold: #f39c12; --pink: #ff3399; --yellow: #ffcc00; --white: #ffffff; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { width: 100vw; height: 100vh; overflow: hidden; background: var(--bg); font-family: -apple-system, sans-serif; color: var(--white); touch-action: none; }
+        #webgl-canvas { position: absolute; inset: 0; z-index: 1; }
+        .glass-box { background: rgba(10, 15, 25, 0.85); border: 1px solid rgba(0, 243, 255, 0.2); backdrop-filter: blur(25px); border-radius: 24px; padding: 25px; text-align: center; box-shadow: 0 10px 50px rgba(0,243,255,0.15); }
+        .btn-quantum { background: linear-gradient(135deg, #00f3ff, #ff3399); border: none; color: #fff; padding: 14px; border-radius: 16px; font-size: 0.95rem; font-weight: bold; cursor: pointer; width: 100%; transition: transform 0.2s; box-shadow: 0 4px 15px rgba(0,243,255,0.4); }
+        .btn-quantum:active { transform: scale(0.95); }
+        .quantum-input { background: rgba(0,0,0,0.6); border: 1px solid rgba(0,243,255,0.4); color: var(--yellow); padding: 12px; border-radius: 14px; width: 100%; text-align: center; font-size: 0.95rem; font-family: monospace; outline: none; margin-bottom: 12px; }
+        #name-gate { position: fixed; inset: 0; background: rgba(2,3,4,0.98); z-index: 20000; display: flex; justify-content: center; align-items: center; padding: 25px; backdrop-filter: blur(35px); }
+        audio, video { display: none; }
+    </style>
+    <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.150.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.150.0/examples/jsm/" } }
+    </script>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <canvas id="webgl-canvas"></canvas>
+    <audio id="remoteAudio" autoplay playsinline></audio>
+
+    <div id="name-gate">
+        <div class="glass-box" style="max-width:360px; width:100%;">
+            <div style="color:var(--cyan); font-size:0.85rem; margin-bottom:8px; font-family:monospace;">🪷 BODHI-PANYA ENGINE</div>
+            <h2 style="font-size:1.2rem; margin-bottom:15px; color:var(--white);">นามผู้ตื่นรู้ในโครงข่าย</h2>
+            <input type="text" id="alias-input" class="quantum-input" placeholder="เช่น สารถีเบิร์ด..." maxlength="20">
+            <button class="btn-quantum" onclick="window.saveAliasAndStart()">✨ เดินเครื่องสมาธิ</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        let myAlias = localStorage.getItem('voxel_alias') || '';
+        if(myAlias) document.getElementById('name-gate').style.display = 'none';
+
+        // โครงสร้าง Graph Pointer ของ UI
+        const cosmicGraph = {
+            tag: 'div', id: 'ui-layer', style: 'position:absolute; inset:0; z-index:10; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; padding:20px;',
+            children: [
+                {
+                    tag: 'div', style: 'display:flex; justify-content:space-between; pointer-events:auto; gap:8px; flex-wrap:wrap;',
+                    children: [
+                        { tag: 'div', id: 'my-spore-id', style: 'background:rgba(5,10,15,0.8); border:1px solid var(--cyan); padding:6px 12px; border-radius:20px; font-size:0.65rem; color:var(--cyan); font-family:monospace;', text: 'ID: กำลังกำหนดจิต...' },
+                        { tag: 'div', id: 'bitrate-meter', style: 'background:rgba(5,10,15,0.8); border:1px solid var(--yellow); padding:6px 12px; border-radius:20px; font-size:0.65rem; color:var(--yellow); font-family:monospace;', text: '🪞 Mirror: Stateless' },
+                        { tag: 'div', id: 'eco-status', style: 'background:rgba(5,10,15,0.8); border:1px solid var(--gold); padding:6px 12px; border-radius:20px; font-size:0.65rem; color:var(--gold); font-family:monospace;', text: 'สมาธิลึก (Sleep)' }
+                    ]
+                },
+                {
+                    tag: 'div', id: 'hud-main', style: 'pointer-events:auto; max-width:380px; width:100%; margin:0 auto;',
+                    children: [
+                        {
+                            tag: 'div', className: 'glass-box',
+                            children: [
+                                { tag: 'div', id: 'display-my-name', style: 'color:var(--cyan); font-size:0.85rem; margin-bottom:12px; font-family:monospace;', text: `ผู้ตื่นรู้: ${myAlias || 'นิรนาม'}` },
+                                { tag: 'input', id: 'friend-id-input', className: 'quantum-input', placeholder: 'วางรหัสกระจกสะท้อนของเพื่อน...' },
+                                { tag: 'button', className: 'btn-quantum', style: 'margin-bottom:10px;', text: '⚡ ส่ง Event ปลุกโครงข่าย', onClick: () => window.callFriend() },
+                                { tag: 'button', className: 'btn-quantum', style: 'background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); font-size:0.8rem; box-shadow:none;', text: '📋 คัดลอกรหัส Pointer ของฉัน', onClick: () => window.sendSpore() }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    tag: 'div', id: 'hud-call', style: 'pointer-events:auto; max-width:400px; width:100%; margin:0 auto; display:none;',
+                    children: [
+                        { tag: 'button', className: 'btn-quantum', style: 'background:linear-gradient(135deg, #ff3333, #ff9900);', text: '🔴 ปล่อยวางผัสสะ (วางสาย)', onClick: () => window.zenHangup() }
+                    ]
+                }
+            ]
+        };
+
+        function manifestGraph(node, parent) {
+            const el = document.createElement(node.tag || 'div');
+            if(node.id) el.id = node.id;
+            if(node.className) el.className = node.className;
+            if(node.style) el.style.cssText = node.style;
+            if(node.text) el.innerText = node.text;
+            if(node.html) el.innerHTML = node.html;
+            if(node.onClick) el.onclick = node.onClick;
+            if(node.children) node.children.forEach(c => manifestGraph(c, el));
+            parent.appendChild(el);
+            return el;
+        }
+        manifestGraph(cosmicGraph, document.body);
+
+        window.saveAliasAndStart = () => {
+            const val = document.getElementById('alias-input').value.trim();
+            if(!val) { alert("โปรดใส่นามผู้ตื่นรู้ก่อนครับ"); return; }
+            localStorage.setItem('voxel_alias', val);
+            myAlias = val;
+            document.getElementById('display-my-name').innerText = `ผู้ตื่นรู้: ${myAlias}`;
+            document.getElementById('name-gate').style.display = 'none';
+            window.playZenChime();
+        };
+
+        const SYS = { state: 'SLEEP', myId: null, currentCall: null, waitingTimer: null };
+        let audioCtx, analyzer, dataArray, localStream;
+
+        // เสียงระฆังควอนตัม 3 ระดับ
+        window.playZenChime = () => {
+            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            [432, 648, 864].forEach((f, i) => { // ความถี่แห่งจักรวาล (432Hz)
+                const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+                osc.connect(g); g.connect(audioCtx.destination); osc.frequency.value = f;
+                g.gain.setValueAtTime(0, now + i*0.1); g.gain.linearRampToValueAtTime(0.15, now + i*0.1 + 0.05);
+                g.gain.exponentialRampToValueAtTime(0.001, now + i*0.1 + 0.6);
+                osc.start(now + i*0.1); osc.stop(now + i*0.1 + 0.6);
+            });
+        };
+
+        const peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] } });
+        
+        peer.on('open', (id) => {
+            SYS.myId = id;
+            document.getElementById('my-spore-id').innerText = `Pointer: ${id.substring(0,5)}...`;
+        });
+
+        peer.on('call', async (call) => {
+            playZenChime();
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                call.answer(localStream);
+                bindCallEvents(call);
+            } catch(e) { alert("โปรดอนุญาตไมโครโฟนเพื่อสะท้อนเสียง"); }
+        });
+
+        window.sendSpore = async () => {
+            playZenChime();
+            if(navigator.clipboard) {
+                await navigator.clipboard.writeText(SYS.myId);
+                alert(`คัดลอก Recursive Pointer ของ [${myAlias}] แล้ว!\nส่งต่อให้เพื่อนเพื่อเชื่อมกระจกเงาได้เลยครับ`);
+            }
+        };
+
+        window.callFriend = async () => {
+            const friendId = document.getElementById('friend-id-input').value.trim();
+            if(!friendId) { alert("โปรดวางรหัส Pointer ของเพื่อนก่อนครับ"); return; }
+            playZenChime();
+            document.getElementById('eco-status').innerText = "กำลังสะท้อน Event...";
+            
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                const call = peer.call(friendId, localStream);
+                bindCallEvents(call);
+            } catch(e) { 
+                alert("การสะท้อนล้มเหลว โหนดอาจยังไม่พร้อม"); 
+                window.zenHangup();
+            }
+        };
+
+        function bindCallEvents(call) {
+            SYS.currentCall = call;
+            call.on('stream', (remoteStream) => {
+                const ra = document.getElementById('remoteAudio');
+                ra.srcObject = remoteStream; ra.play().catch(e => {});
+                setupAudioReactive(remoteStream);
+                
+                document.getElementById('hud-main').style.display = 'none';
+                document.getElementById('hud-call').style.display = 'block';
+                document.getElementById('eco-status').innerText = "โพธิปัญญาตื่นรู้ (AWAKE)";
+                document.getElementById('eco-status').style.color = "var(--cyan)";
+                document.getElementById('bitrate-meter').innerText = `🪞 Mirror: Reflecting...`;
+                
+                SYS.state = 'AWAKE';
+            });
+            call.on('close', () => window.zenHangup(true));
+        }
+
+        window.zenHangup = (remote = false) => {
+            if(!remote) playZenChime();
+            if(SYS.currentCall) SYS.currentCall.close();
+            if(localStream) localStream.getTracks().forEach(t => t.stop());
+            SYS.state = 'SLEEP';
+            document.getElementById('hud-main').style.display = 'block';
+            document.getElementById('hud-call').style.display = 'none';
+            document.getElementById('eco-status').innerText = "สมาธิลึก (Sleep)";
+            document.getElementById('eco-status').style.color = "var(--gold)";
+            document.getElementById('bitrate-meter').innerText = `🪞 Mirror: Stateless`;
+        };
+
+        function setupAudioReactive(stream) {
+            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            analyzer = audioCtx.createAnalyser(); analyzer.fftSize = 256;
+            audioCtx.createMediaStreamSource(stream).connect(analyzer);
+            dataArray = new Uint8Array(analyzer.frequencyBinCount);
+        }
+
+        // ==========================================
+        // 🪞 โพธิปัญญาเอนจิ้น: THE 3D VOXEL CORE
+        // ==========================================
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 11);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('webgl-canvas'), antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.8, 0.5, 0.1));
+
+        // กองทัพลูกกวาด M&M 600 โหนด
+        const MAX_NODES = 600;
+        const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+        const material = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0.3 });
+        const voxelMesh = new THREE.InstancedMesh(geometry, material, MAX_NODES);
+
+        const candyColors = [
+            new THREE.Color(0x00f3ff), // Cyan
+            new THREE.Color(0xff3399), // Pink
+            new THREE.Color(0xffcc00), // Yellow
+            new THREE.Color(0x00ff66), // Green
+            new THREE.Color(0x9c27b0)  // Purple
+        ];
+
+        const dummy = new THREE.Object3D();
+        const nodeBase = []; // เก็บแค่ตำแหน่งพื้นฐาน (ขันธ์ 5 เบื้องต้น)
+
+        for(let i=0; i<MAX_NODES; i++) {
+            const x = (Math.random()-0.5)*8;
+            const y = (Math.random()-0.5)*8;
+            const z = (Math.random()-0.5)*8;
+            nodeBase.push({ x, y, z, freq: Math.random()*2+1 });
+            
+            dummy.position.set(x, y, z);
+            dummy.updateMatrix();
+            voxelMesh.setMatrixAt(i, dummy.matrix);
+            voxelMesh.setColorAt(i, candyColors[Math.floor(Math.random() * candyColors.length)]);
+        }
+        voxelMesh.instanceMatrix.needsUpdate = true;
+        voxelMesh.instanceColor.needsUpdate = true;
+        scene.add(voxelMesh);
+        scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+
+        // =========================================================================
+        // 🪞 RECURSIVE GRAPH POINTER MIRROR ALGORITHM (อิทัปปัจจยตา)
+        // ทำงานแบบ Binary Tree Recursion เพื่อกระจาย Event สะท้อนเงาโดยไม่เก็บ State
+        // ความลึก O(log N) ใช้แรมน้อยสุดขีด แต่สร้างความพริ้วไหวถึง 600 โหนดในพริบตา
+        // =========================================================================
+        function recursiveMirrorReflect(start, end, audioEnergy, time) {
+            if (start >= end) return;
+            if (end - start === 1) { // ฐานของ Recursion (สะท้อนลงตัวอนุภาค 1 ตัว)
+                const i = start;
+                const base = nodeBase[i];
+                
+                // กระจกสะท้อน Event (Zero-Accumulation)
+                const energyLevel = (SYS.state === 'AWAKE') ? (0.2 + audioEnergy * 3.5) : 0.1; 
+                const scale = energyLevel;
+                
+                // รูป เวทนา สัญญา สังขาร วิญญาณ - เปลี่ยนไปตามเหตุปัจจัย (เวลาและพลังงาน)
+                dummy.position.set(
+                    base.x + (SYS.state === 'AWAKE' ? Math.sin(time * base.freq + i) * 0.5 * energyLevel : 0),
+                    base.y + (SYS.state === 'AWAKE' ? Math.cos(time * base.freq * 0.8 + i) * 0.5 * energyLevel : 0),
+                    base.z
+                );
+                
+                dummy.scale.set(scale, scale, scale);
+                dummy.rotation.x = time * 0.5 + i;
+                dummy.rotation.y = time * 0.3;
+                dummy.updateMatrix();
+                
+                voxelMesh.setMatrixAt(i, dummy.matrix);
+                return;
+            }
+            
+            // แตกกิ่งกระจกสะท้อนซ้าย-ขวา (Fractal Reflection)
+            const mid = Math.floor((start + end) / 2);
+            recursiveMirrorReflect(start, mid, audioEnergy, time);
+            recursiveMirrorReflect(mid, end, audioEnergy, time);
+        }
+
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            let currentAudioEnergy = 0.0;
+            if(analyzer && dataArray && SYS.state === 'AWAKE') {
+                analyzer.getByteFrequencyData(dataArray);
+                let sum = 0; for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
+                currentAudioEnergy = sum / dataArray.length / 255.0; // หาค่าเฉลี่ยพลังงาน
+            }
+
+            // ⚡ เดินเครื่องโพธิปัญญาเอนจิ้น! โยนข้อมูลเข้ากระจกสะท้อน (Recursive Mirror)
+            recursiveMirrorReflect(0, MAX_NODES, currentAudioEnergy, t);
+            
+            voxelMesh.instanceMatrix.needsUpdate = true;
+            voxelMesh.rotation.y = t * 0.1; // หมุนจักรวาลไปอย่างช้าๆ
+
+            composer.render();
+        }
+        animate();
+    </script>
+</body>
+</html>
