@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Voxel AI OS : Universal Buddha Algorithm</title>
+    <style>
+        :root {
+            --bg-color: #010203;
+            --glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(0, 243, 255, 0.02));
+            --glass-border: 1px solid rgba(0, 243, 255, 0.15);
+            --cyan-core: #00f3ff; --gold-core: #f39c12; --magenta-core: #ff00ff; --green-core: #00ff66; --red-core: #ff3366;
+            --pure-white: #ffffff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { width: 100vw; height: 100vh; overflow: hidden; background: var(--bg-color); font-family: '-apple-system', 'Segoe UI', sans-serif; color: white; user-select: none; touch-action: none; }
+        
+        #webgl-canvas { position: absolute; top: 0; left: 0; z-index: 1; width: 100%; height: 100%; }
+        #shadow-dom { position: absolute; top: -9999px; left: -9999px; width: 320px; font-size: 24px; font-weight: bold; visibility: hidden; }
+
+        /* HUD & UI LAYER */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: env(safe-area-inset-top) 15px env(safe-area-inset-bottom) 15px; }
+        .top-bar { display: flex; justify-content: space-between; pointer-events: auto; align-items: center; margin-top: 10px; }
+        .glass-pill { background: rgba(0,0,0,0.6); border: var(--glass-border); padding: 6px 12px; border-radius: 20px; font-size: 0.65rem; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--green-core); font-family: monospace; }
+        
+        .hud-panel {
+            background: var(--glass-bg); border: var(--glass-border); border-radius: 24px;
+            padding: 16px; backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); pointer-events: auto;
+            width: 100%; max-width: 420px; margin: 0 auto 10px auto; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 -10px 40px rgba(0,0,0,0.8);
+        }
+        
+        .btn-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .btn-glass { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 12px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: all 0.3s; text-align: center; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .btn-glass:active { transform: scale(0.95); }
+        .voice-btn { background: rgba(255, 255, 255, 0.1); border-color: var(--pure-white); grid-column: span 2; font-size: 0.8rem; padding: 14px; }
+        .voice-btn.listening { background: var(--pure-white); color: #000; box-shadow: 0 0 20px var(--pure-white); animation: pulse 1s infinite; }
+        
+        .hangup-btn { display: none; background: rgba(255, 51, 102, 0.15); border-color: var(--red-core); color: var(--red-core); grid-column: span 2; font-size: 0.8rem; padding: 14px; }
+        
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+
+        /* PDCA MICRO-CHUNKING BOARD */
+        #pdca-board { display: none; position: absolute; top: 20%; left: 50%; transform: translateX(-50%); width: 90%; max-width: 350px; background: rgba(0,0,0,0.8); border: 1px solid var(--cyan-core); border-radius: 16px; padding: 15px; z-index: 20; backdrop-filter: blur(10px); pointer-events: auto; box-shadow: 0 0 30px rgba(0,243,255,0.2); flex-direction: column; gap: 10px; animation: popIn 0.3s ease-out; }
+        @keyframes popIn { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.9); } 100% { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+        .pdca-title { color: var(--cyan-core); font-size: 0.8rem; font-weight: bold; border-bottom: 1px dashed rgba(255,255,255,0.2); padding-bottom: 5px; }
+        .micro-chunk { font-size: 0.7rem; color: #ccc; margin-left: 10px; border-left: 2px solid var(--gold-core); padding-left: 8px; margin-bottom: 4px; }
+
+        /* CONTACT DRAWER (สหายธรรม) */
+        #contact-drawer { position: absolute; bottom: -100%; left: 0; width: 100%; background: rgba(1,2,3,0.95); border-top: 1px solid var(--green-core); border-top-left-radius: 24px; border-top-right-radius: 24px; padding: 20px 20px calc(20px + env(safe-area-inset-bottom)) 20px; z-index: 40; backdrop-filter: blur(20px); transition: bottom 0.4s cubic-bezier(0.1, 0.9, 0.2, 1); pointer-events: auto; }
+        #contact-drawer.open { bottom: 0; }
+        .drawer-handle { width: 40px; height: 4px; background: rgba(255,255,255,0.3); border-radius: 2px; margin: 0 auto 15px auto; }
+        .contact-list { display: flex; flex-direction: column; gap: 10px; max-height: 40vh; overflow-y: auto; }
+        .contact-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 12px 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); }
+        .contact-name { font-size: 0.8rem; color: white; }
+        .btn-call { background: rgba(0, 255, 102, 0.15); border: 1px solid var(--green-core); color: var(--green-core); padding: 6px 12px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; cursor: pointer; }
+
+        /* FULL-SCREEN WORKSHOP (มิติควอนตัม + พระคาถา) */
+        #fullscreen-workshop { display: none; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: radial-gradient(circle, rgba(1,2,3,0.98) 0%, rgba(20,15,0,0.99) 100%); z-index: 30; backdrop-filter: blur(20px); flex-direction: column; justify-content: center; padding: 25px; pointer-events: auto; }
+        .shrine-box { background: rgba(243, 156, 18, 0.08); border: 1px solid var(--gold-core); border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 0 40px rgba(243,156,18,0.2); animation: popIn 0.5s ease-out; }
+        .shrine-title { color: var(--gold-core); font-size: 0.9rem; font-weight: bold; margin-bottom: 10px; text-shadow: 0 0 10px var(--gold-core); }
+        .shrine-text { font-family: 'Courier New', monospace; font-size: 0.7rem; color: #ffeb3b; line-height: 1.6; text-shadow: 0 0 5px rgba(255,235,59,0.5); margin-bottom: 20px; }
+    </style>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.150.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.150.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <canvas id="webgl-canvas"></canvas>
+    <div id="shadow-dom"></div>
+
+    <div id="ui-layer">
+        <div class="top-bar">
+            <div class="glass-pill" id="telemetry">FPS: 60 | อิทัปปัจจยตา: ฌาน</div>
+            <div class="glass-pill" id="eco-status" style="color:var(--cyan-core); border-color:var(--cyan-core);">Eco-Samadhi: ACTIVE</div>
+        </div>
+
+        <div class="hud-panel" id="main-controls">
+            <div class="btn-grid">
+                <button class="btn-glass voice-btn" id="btn-mic" onclick="startVoicePipeline()">🎙️ โยนิโส (สั่งงานด้วยเสียง)</button>
+                <button class="btn-glass" onclick="toggleContactDrawer()">👥 สหายธรรม (ดึงจิต)</button>
+                <button class="btn-glass" onclick="warpToWorkshop(true)">🪷 วาร์ปห้องทำงาน</button>
+            </div>
+        </div>
+
+        <!-- HANGUP BUTTON (ปรากฏตอนคุย) -->
+        <div class="hud-panel" id="call-controls" style="display:none; background:transparent; border:none; box-shadow:none;">
+            <div class="btn-grid">
+                <button class="btn-glass hangup-btn" id="btn-hangup" onclick="zenHangup()">🔴 วางสาย (คลายจิตสลาย Voxel)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDCA BOARD -->
+    <div id="pdca-board">
+        <div class="pdca-title">☸️ โยนิโส: แยกแยะเหตุปัจจัย (Micro-Chunks)</div>
+        <div id="pdca-content"></div>
+        <button class="btn-glass" style="margin-top:10px; border-color:var(--green-core); color:var(--green-core);" onclick="commitPDCAToManifest()">✨ มัชฌิมาปฏิปทา (เนรมิต)</button>
+    </div>
+
+    <!-- CONTACT DRAWER -->
+    <div id="contact-drawer">
+        <div class="drawer-handle" onclick="toggleContactDrawer()"></div>
+        <div style="color:var(--green-core); font-size:0.85rem; font-weight:bold; margin-bottom:15px; text-align:center;">🍄 โครงข่ายไมโครไรซา (P2P)</div>
+        <div class="contact-list">
+            <div class="contact-item"><span class="contact-name">สหายโปรแกรมเมอร์ A</span><button class="btn-call" onclick="sendSporeInvite('สหายโปรแกรมเมอร์ A')">ดึงจิต</button></div>
+            <div class="contact-item"><span class="contact-name">สหายธรรม B</span><button class="btn-call" onclick="sendSporeInvite('สหายธรรม B')">ดึงจิต</button></div>
+        </div>
+        <button class="btn-glass" style="width:100%; margin-top:15px; border-color:var(--red-core); color:var(--red-core);" onclick="toggleContactDrawer()">ปิดลิ้นชัก</button>
+    </div>
+
+    <!-- FULL-SCREEN WORKSHOP -->
+    <div id="fullscreen-workshop">
+        <div class="shrine-box">
+            <div class="shrine-title">📿 มิติควอนตัม & มหากาถาคุ้มครอง</div>
+            <div class="shrine-text">
+                "สัมปะจิตฉามิ นาสังสิโม | พรหมา จะ มะหาเทวา สัพเพ ยักขา ปะรายันติ"<br>
+                "มหาวิชโย โหหิ อสังวาโส"
+            </div>
+            <button class="btn-glass" style="width:100%; border-color:var(--cyan-core); color:var(--cyan-core);" onclick="closeWorkshop()">✨ น้อมรับพลังงาน (วาร์ปกลับ)</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        const SYS = { state: 'ZEN', lastActivity: Date.now(), isCallActive: false };
+        let audioCtx;
+
+        // --- ECO-SAMADHI (อหิงสาต่อแบตเตอรี่) ---
+        function resetEcoTimer() {
+            SYS.lastActivity = Date.now();
+            document.getElementById('eco-status').innerText = "Eco-Samadhi: AWAKE";
+            document.getElementById('eco-status').style.color = "var(--gold-core)";
+        }
+
+        // --- ZEN AUDIO CUES ---
+        window.playZenChime = () => {
+            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const playNote = (freq, startTime, duration) => {
+                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination); osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+                osc.start(startTime); osc.stop(startTime + duration);
+            };
+            const now = audioCtx.currentTime;
+            playNote(880, now, 0.4); // ตึ๊ด
+            playNote(1320, now + 0.15, 0.8); // ตึ๊ง
+        };
+
+        // --- FUZZY MANTRA & VOICE PIPELINE ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        if(SpeechRecognition) {
+            recognition = new SpeechRecognition(); recognition.lang = 'th-TH';
+            recognition.onstart = () => { 
+                document.getElementById('btn-mic').classList.add('listening'); 
+                document.getElementById('btn-mic').innerText = "🎙️ ...กำลังฟังเจตนา..."; 
+                resetEcoTimer();
+            };
+            recognition.onend = () => { 
+                document.getElementById('btn-mic').classList.remove('listening'); 
+                document.getElementById('btn-mic').innerText = "🎙️ โยนิโส (สั่งงานด้วยเสียง)"; 
+            };
+            recognition.onresult = (e) => {
+                const text = e.results[0][0].transcript.replace(/\s+/g, '');
+                // Fuzzy Match (จับเจตนา ไม่จับอักขระ)
+                if(text.includes("นะมะ") || text.includes("พะธะ") || text.includes("น้ำมะ") || text.includes("พะทะ")) {
+                    warpToWorkshop(false);
+                } else {
+                    processPDCA(e.results[0][0].transcript);
+                }
+            };
+        }
+        
+        window.startVoicePipeline = () => { window.playZenChime(); if(recognition) recognition.start(); };
+
+        // --- PDCA MICRO-CHUNKING UX ---
+        let currentPrompt = "";
+        window.processPDCA = (promptText) => {
+            currentPrompt = promptText;
+            const pdcaBoard = document.getElementById('pdca-board');
+            const content = document.getElementById('pdca-content');
+            pdcaBoard.style.display = 'flex';
+            
+            // ย่อยปัญหา (Mock Micro-chunks)
+            content.innerHTML = `
+                <div class="micro-chunk">1. รับเหตุ: "${promptText}"</div>
+                <div class="micro-chunk">2. โยนิโส: ตรวจสอบความสมดุล UX</div>
+                <div class="micro-chunk">3. สังเคราะห์: จัดเตรียมสถาปัตยกรรม 60 FPS</div>
+            `;
+            resetEcoTimer();
+        };
+        
+        window.commitPDCAToManifest = () => {
+            document.getElementById('pdca-board').style.display = 'none';
+            triggerInstantManifestation(currentPrompt);
+        };
+
+        // --- NATIVE SHARE & CONTACTS (สปอร์ไมโครไรซา) ---
+        window.toggleContactDrawer = () => {
+            const drawer = document.getElementById('contact-drawer');
+            drawer.classList.toggle('open');
+            resetEcoTimer();
+        };
+
+        window.sendSporeInvite = async (friendName) => {
+            window.toggleContactDrawer();
+            const shareData = {
+                title: 'Voxel AI OS : ดึงจิต',
+                text: `[สปอร์จักรวาล] เข้ามาคุยกันในมิติควอนตัมเถอะ ${friendName}! (นะมะพะธะ)`,
+                url: 'https://voxel-os.quantum/spore-invite-xyz' // Mock URL
+            };
+            try {
+                if (navigator.share) {
+                    await navigator.share(shareData); // เด้ง Native Share ของ iPhone ทันที
+                    // Simulate Friend Connecting
+                    setTimeout(() => acceptCall(friendName), 2000);
+                } else {
+                    alert(`คัดลอกสปอร์สำหรับ ${friendName} แล้ว! วางใน Messenger ได้เลย`);
+                    setTimeout(() => acceptCall(friendName), 2000);
+                }
+            } catch (err) { console.log("Share cancelled or failed.", err); }
+        };
+
+        // --- CALL & ZEN DISSOLVE HANGUP ---
+        function acceptCall(name) {
+            SYS.isCallActive = true;
+            document.getElementById('main-controls').style.display = 'none';
+            document.getElementById('call-controls').style.display = 'flex';
+            document.getElementById('btn-hangup').style.display = 'block';
+            triggerInstantManifestation(`เชื่อมจิต: ${name}`);
+            resetEcoTimer();
+        }
+
+        window.zenHangup = () => {
+            SYS.state = 'DISSOLVE'; // ทริกเกอร์ Shader ให้สลายตัว
+            window.playZenChime();
+            setTimeout(() => {
+                SYS.isCallActive = false;
+                SYS.state = 'ZEN';
+                document.getElementById('main-controls').style.display = 'flex';
+                document.getElementById('call-controls').style.display = 'none';
+                document.getElementById('btn-hangup').style.display = 'none';
+                voxelMesh.visible = false;
+            }, 1500); // สลายตัว 1.5 วินาที
+        };
+
+        window.warpToWorkshop = (playTone) => {
+            if(playTone) window.playZenChime();
+            document.getElementById('fullscreen-workshop').style.display = 'flex';
+            resetEcoTimer();
+        };
+        window.closeWorkshop = () => {
+            document.getElementById('fullscreen-workshop').style.display = 'none';
+            resetEcoTimer();
+        };
+
+        // --- THREE.JS QUANTUM ENGINE ---
+        const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x010203, 0.04);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100); 
+        camera.position.set(0, 0, 14); camera.lookAt(0, 0, 0); 
+
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('webgl-canvas'), antialias: true, alpha: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.1));
+
+        // ZEN MANDALA (Idle Core)
+        const coreShape = new THREE.Mesh(
+            new THREE.TorusKnotGeometry(1.5, 0.4, 80, 16), 
+            new THREE.MeshBasicMaterial({ color: 0xffd700, wireframe: true, transparent: true, opacity: 0.5 })
+        );
+        coreShape.position.y = 4.0; scene.add(coreShape);
+
+        // VOXEL PARTICLES (Custom Shader with Dissolve)
+        const MAX_VOXELS = 2000;
+        const textMat = new THREE.MeshStandardMaterial({ color: 0x00ff66, emissive: 0x00ff66, emissiveIntensity: 1.5 });
+        const shaderUniforms = { uTime: { value: 0 }, uMorph: { value: 0.0 }, uDissolve: { value: 0.0 } };
+        
+        textMat.onBeforeCompile = (shader) => {
+            shader.uniforms.uTime = shaderUniforms.uTime; 
+            shader.uniforms.uMorph = shaderUniforms.uMorph;
+            shader.uniforms.uDissolve = shaderUniforms.uDissolve;
+            shader.vertexShader = `uniform float uTime; uniform float uMorph; uniform float uDissolve; attribute vec3 aTargetPos; attribute vec3 aRandomPos;` + shader.vertexShader;
+            shader.vertexShader = shader.vertexShader.replace(`#include <begin_vertex>`, `
+                vec3 idlePos = aRandomPos + vec3(sin(uTime+aRandomPos.x), cos(uTime+aRandomPos.y), sin(uTime+aRandomPos.z)) * 0.5;
+                vec3 textPos = vec3(aTargetPos.x, aTargetPos.y, aTargetPos.z + sin(aTargetPos.x*2.0 - uTime*2.0)*0.15);
+                // Morph to text, then explode outwards on Dissolve
+                vec3 formed = mix(idlePos, textPos, uMorph);
+                vec3 dissolvedPos = formed + (aRandomPos * 10.0 * uDissolve) + vec3(0.0, uDissolve * 5.0, 0.0);
+                vec3 transformed = dissolvedPos;
+            `);
+        };
+
+        const voxelMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), textMat, MAX_VOXELS);
+        const targetPosArray = new Float32Array(MAX_VOXELS * 3); 
+        const randomPosArray = new Float32Array(MAX_VOXELS * 3);
+        for(let i=0; i<MAX_VOXELS; i++) {
+            randomPosArray[i*3] = (Math.random()-0.5)*12; 
+            randomPosArray[i*3+1] = (Math.random()-0.5)*12 + 4.0; 
+            randomPosArray[i*3+2] = (Math.random()-0.5)*12;
+        }
+        voxelMesh.geometry.setAttribute('aTargetPos', new THREE.InstancedBufferAttribute(targetPosArray, 3));
+        voxelMesh.geometry.setAttribute('aRandomPos', new THREE.InstancedBufferAttribute(randomPosArray, 3));
+        voxelMesh.visible = false; scene.add(voxelMesh); scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+        window.triggerInstantManifestation = (text) => {
+            SYS.state = 'MANIFEST';
+            voxelMesh.visible = true; coreShape.visible = false;
+            shaderUniforms.uDissolve.value = 0.0; // Reset dissolve
+            
+            const sd = document.getElementById('shadow-dom'); sd.innerHTML = ''; 
+            for(let char of text) sd.innerHTML += (char === ' ') ? '<span>&nbsp;</span>' : `<span>${char}</span>`;
+            setTimeout(() => {
+                const spans = sd.querySelectorAll('span'); const sdRect = sd.getBoundingClientRect(); let voxelIdx = 0;
+                spans.forEach((span) => {
+                    if(span.innerText.trim() === '' || voxelIdx >= MAX_VOXELS) return;
+                    const r = span.getBoundingClientRect(); 
+                    const x3d = (r.left - sdRect.left - (sdRect.width/2)) * 0.045; 
+                    const y3d = -(r.top - sdRect.top - (sdRect.height/2)) * 0.045 + 5.0; 
+                    for(let v=0; v<4; v++) { // Density
+                        if(voxelIdx >= MAX_VOXELS) break;
+                        targetPosArray[voxelIdx*3] = x3d + (Math.random()-0.5)*0.04;
+                        targetPosArray[voxelIdx*3+1] = y3d + (Math.random()-0.5)*0.04;
+                        targetPosArray[voxelIdx*3+2] = (Math.random()-0.5)*0.1;
+                        voxelIdx++;
+                    }
+                });
+                voxelMesh.geometry.attributes.aTargetPos.needsUpdate = true; voxelMesh.count = voxelIdx; 
+            }, 50);
+            resetEcoTimer();
+        };
+
+        // --- RENDER LOOP & ECO-SAMADHI ---
+        const clock = new THREE.Clock();
+        let lastFrameTime = 0;
+
+        function render(time) {
+            requestAnimationFrame(render);
+            
+            // Eco-Samadhi Logic (ลด FPS ถ้าไม่ได้ทำอะไรเกิน 5 วินาที)
+            const idleTime = Date.now() - SYS.lastActivity;
+            const isEco = idleTime > 5000 && !SYS.isCallActive;
+            
+            if(isEco) {
+                document.getElementById('eco-status').innerText = "Eco-Samadhi: SLEEP";
+                document.getElementById('eco-status').style.color = "var(--green-core)";
+                document.getElementById('telemetry').innerText = "FPS: ~10 (Eco)";
+                if (time - lastFrameTime < 100) return; // Throttle to ~10 FPS
+            } else {
+                document.getElementById('telemetry').innerText = "FPS: 60 (Quantum)";
+            }
+            lastFrameTime = time;
+
+            const dt = clock.getDelta(); const t = clock.getElapsedTime();
+            
+            if(SYS.state === 'ZEN') { 
+                coreShape.visible = true; 
+                coreShape.rotation.x += dt * 0.2; coreShape.rotation.y += dt * 0.4; 
+                shaderUniforms.uMorph.value = Math.max(0, shaderUniforms.uMorph.value - dt * 3.0);
+            } 
+            else if (SYS.state === 'MANIFEST' || SYS.state === 'DISSOLVE') {
+                shaderUniforms.uTime.value = t;
+                voxelMesh.rotation.y = Math.sin(t * 0.5) * 0.1;
+                
+                if (SYS.state === 'MANIFEST') {
+                    shaderUniforms.uMorph.value += (1.0 - shaderUniforms.uMorph.value) * dt * 3.0;
+                } else if (SYS.state === 'DISSOLVE') {
+                    shaderUniforms.uDissolve.value += dt * 2.0; // เร่งให้ฝุ่นสลายตัว
+                }
+            }
+            composer.render();
+        }
+
+        render(performance.now());
+    </script>
+</body>
+</html>
